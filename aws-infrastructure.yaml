@@ -11,12 +11,12 @@ Parameters:
   MasterUserPassword:
     Type: String
     Description: Password for RDS and DocumentDB
-#  DBAdminUsername:
-#    Type: String
-#    Description: Username for Postgres DB
-#  DBAdminPassword:
-#    Type: String
-#    Description: Password for Postgres DB
+  DBAdminUsername:
+    Type: String
+    Description: Username for Postgres DB
+  DBAdminPassword:
+    Type: String
+    Description: Password for Postgres DB
   MQAdminUsername:
     Type: String
     Description: Username for RabbitMQ
@@ -26,15 +26,15 @@ Parameters:
   KeyName:
     Type: String
     Description: The name of the EC2 Key Pair
-#  RepositoryURL:
-#    Type: String
-#    Description: Repository URL for Amplify App
-#  OauthToken:
-#    Type: String
-#    Description: OAuth token for Amplify App
-#  ACMCertificateARN:
-#    Type: String
-#    Description: ARN of the ACM certificate for HTTPS
+  RepositoryURL:
+    Type: String
+    Description: Repository URL for Amplify App
+  OauthToken:
+    Type: String
+    Description: OAuth token for Amplify App
+  ACMCertificateARN:
+    Type: String
+    Description: ARN of the ACM certificate for HTTPS
 
 Resources:
   VPC:
@@ -291,35 +291,35 @@ Resources:
       - LoadBalancerALB
       - ECSLoadBalancerTargetGroup
 
-#  PostgresDB:
-#    Type: AWS::RDS::DBInstance
-#    Properties:
-#      DBInstanceIdentifier: !Sub "${StackName}-PostgresDB"
-#      AllocatedStorage: 100
-#      DBInstanceClass: db.t3.micro
-#      Engine: postgres
-#      MasterUsername: !Ref MasterUsername
-#      MasterUserPassword: !Ref MasterUserPassword
-#      VPCSecurityGroups:
-#        - !Ref ECSSecurityGroup
-#      DBSubnetGroupName: !Ref DBSubnetGroup
-#      MultiAZ: false
-#      BackupRetentionPeriod: 10
-#    DependsOn:
-#      - DBSubnetGroup
-#      - ECSSecurityGroup
+  PostgresDB:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: !Sub "${StackName}-PostgresDB"
+      AllocatedStorage: 100
+      DBInstanceClass: db.t3.micro
+      Engine: postgres
+      MasterUsername: !Ref MasterUsername
+      MasterUserPassword: !Ref MasterUserPassword
+      VPCSecurityGroups:
+        - !Ref ECSSecurityGroup
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      MultiAZ: false
+      BackupRetentionPeriod: 10
+    DependsOn:
+      - DBSubnetGroup
+      - ECSSecurityGroup
 
-#  DBSubnetGroup:
-#    Type: AWS::RDS::DBSubnetGroup
-#    Properties:
-#      DBSubnetGroupName: !Sub "${StackName}-DBSubnetGroup"
-#      DBSubnetGroupDescription: Subnet group for RDS
-#      SubnetIds:
-#        - !Ref PrivateSubnet1
-#        - !Ref PrivateSubnet2
-#    DependsOn:
-#      - PrivateSubnet1
-#      - PrivateSubnet2
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupName: !Sub "${StackName}-DBSubnetGroup"
+      DBSubnetGroupDescription: Subnet group for RDS
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+    DependsOn:
+      - PrivateSubnet1
+      - PrivateSubnet2
 
   DocumentDBCluster:
     Type: AWS::DocDB::DBCluster
@@ -476,19 +476,19 @@ Resources:
     DependsOn:
       - VPC  # Assuming S3 Bucket creation is assumed to be at the end after VPC
 
-#  AmplifyApp:
-#    Type: AWS::Amplify::App
-#    Properties:
-#      Name: !Sub "${StackName}-AmplifyApp"
-#      Repository: !Ref RepositoryURL
-#      OauthToken: !Ref OauthToken
-#      BuildSpec:
-#      CustomRules:
-#        - Source: "</*>"  # Catch-all rule
-#          Target: "/index.html"
-#          Status: "200"
-#    DependsOn:
-#      - S3Bucket  # Assuming AmplifyApp depends on S3 Bucket
+  AmplifyApp:
+    Type: AWS::Amplify::App
+    Properties:
+      Name: !Sub "${StackName}-AmplifyApp"
+      Repository: !Ref RepositoryURL
+      OauthToken: !Ref OauthToken
+      BuildSpec:
+      CustomRules:
+        - Source: "</*>"  # Catch-all rule
+          Target: "/index.html"
+          Status: "200"
+    DependsOn:
+      - S3Bucket  # Assuming AmplifyApp depends on S3 Bucket
 
   ClassicLoadBalancer:
     Type: AWS::ElasticLoadBalancing::LoadBalancer
@@ -503,10 +503,10 @@ Resources:
         - LoadBalancerPort: '80'
           InstancePort: '80'
           Protocol: HTTP
-#        - LoadBalancerPort: '443'
-#          InstancePort: '443'
-#          Protocol: HTTPS
-#          SSLCertificateId: !Ref ACMCertificateARN
+        - LoadBalancerPort: '443'
+          InstancePort: '443'
+          Protocol: HTTPS
+          SSLCertificateId: !Ref ACMCertificateARN
       HealthCheck:
         Target: HTTP:80/
         HealthyThreshold: '3'
@@ -747,9 +747,9 @@ Outputs:
     Description: DNS Name of the Classic Load Balancer (CLB) for Admin Panel EC2
     Value: !GetAtt ClassicLoadBalancer.DNSName
 
-#  PostgresDBEndpoint:
-#    Description: Endpoint of the PostgreSQL Database
-#    Value: !GetAtt PostgresDB.Endpoint.Address
+  PostgresDBEndpoint:
+    Description: Endpoint of the PostgreSQL Database
+    Value: !GetAtt PostgresDB.Endpoint.Address
 
   DocumentDBClusterEndpoint:
     Description: Endpoint of the DocumentDB Cluster
