@@ -1,0 +1,768 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CloudFormation template to set up microservice architecture on AWS
+
+Parameters:
+  StackName:
+    Type: String
+    Description: The name of the CloudFormation stack
+  MasterUsername:
+    Type: String
+    Description: Master username for RDS and DocumentDB
+  MasterUserPassword:
+    Type: String
+    Description: Password for RDS and DocumentDB
+#  DBAdminUsername:
+#    Type: String
+#    Description: Username for Postgres DB
+#  DBAdminPassword:
+#    Type: String
+#    Description: Password for Postgres DB
+  MQAdminUsername:
+    Type: String
+    Description: Username for RabbitMQ
+  MQAdminPassword:
+    Type: String
+    Description: Password for RabbitMQ
+  KeyName:
+    Type: String
+    Description: The name of the EC2 Key Pair
+#  RepositoryURL:
+#    Type: String
+#    Description: Repository URL for Amplify App
+#  OauthToken:
+#    Type: String
+#    Description: OAuth token for Amplify App
+#  ACMCertificateARN:
+#    Type: String
+#    Description: ARN of the ACM certificate for HTTPS
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${StackName}-VPC"
+  
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub "${StackName}-InternetGateway"
+
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+    DependsOn:
+      - VPC
+      - InternetGateway
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      Tags:
+        - Key: Name
+          Value: !Sub "${StackName}-PublicSubnet1"
+    DependsOn:
+      - VPC
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.2.0/24
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: !Select [ 1, !GetAZs '' ]
+      Tags:
+        - Key: Name
+          Value: !Sub "${StackName}-PublicSubnet2"
+    DependsOn:
+      - VPC
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.3.0/24
+      MapPublicIpOnLaunch: false
+      AvailabilityZone: !Select [ 0, !GetAZs '' ]
+      Tags:
+        - Key: Name
+          Value: !Sub "${StackName}-PrivateSubnet1"
+    DependsOn:
+      - VPC
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.4.0/24
+      MapPublicIpOnLaunch: false
+      AvailabilityZone: !Select [ 1, !GetAZs '' ]
+      Tags:
+        - Key: Name
+          Value: !Sub "${StackName}-PrivateSubnet2"
+    DependsOn:
+      - VPC
+
+  ElasticIP:
+    Type: AWS::EC2::EIP
+    DependsOn: VPC
+
+  ECSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub "${StackName}-ECS-SecurityGroup"
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+    DependsOn:
+      - VPC
+
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub "${StackName}-ECS-SecurityGroup"
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+    DependsOn:
+      - VPC
+
+  RMQSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub "${StackName}-ECS-SecurityGroup"
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5671
+          ToPort: 5671
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+    DependsOn:
+      - VPC
+
+  DocDBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub "${StackName}-ECS-SecurityGroup"
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 27017
+          ToPort: 27017
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+    DependsOn:
+      - VPC
+
+  RedisSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub "${StackName}-ECS-SecurityGroup"
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 6379
+          ToPort: 6379
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+    DependsOn:
+      - VPC
+
+  ECRRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Sub "${StackName}-ecr-repository"
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Expire old images",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 10
+                },
+                "action": {
+                  "type": "expire"
+                }
+              }
+            ]
+          }
+    DependsOn:
+      - VPC
+
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub "${StackName}-ECSCluster"
+    DependsOn:
+      - VPC
+
+  LoadBalancerALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub "${StackName}-ApplicationLoadBalancer"
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+      Scheme: internet-facing
+      LoadBalancerAttributes:
+        - Key: idle_timeout.timeout_seconds
+          Value: '60'
+    DependsOn:
+      - PublicSubnet1
+      - PublicSubnet2
+      - ALBSecurityGroup
+
+  ECSLoadBalancerTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub "${StackName}-TargetGroup"
+      VpcId: !Ref VPC
+      Port: 80
+      Protocol: HTTP
+      TargetType: ip
+      HealthCheckIntervalSeconds: 30
+      HealthCheckPath: /
+      HealthCheckProtocol: HTTP
+      UnhealthyThresholdCount: 3
+      HealthyThresholdCount: 3
+      HealthCheckTimeoutSeconds: 5
+    DependsOn:
+      - VPC
+
+  ECSLoadBalancerListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancerALB
+      Protocol: HTTP
+      Port: 80
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ECSLoadBalancerTargetGroup
+    DependsOn:
+      - LoadBalancerALB
+      - ECSLoadBalancerTargetGroup
+
+#  PostgresDB:
+#    Type: AWS::RDS::DBInstance
+#    Properties:
+#      DBInstanceIdentifier: !Sub "${StackName}-PostgresDB"
+#      AllocatedStorage: 100
+#      DBInstanceClass: db.t3.micro
+#      Engine: postgres
+#      MasterUsername: !Ref MasterUsername
+#      MasterUserPassword: !Ref MasterUserPassword
+#      VPCSecurityGroups:
+#        - !Ref ECSSecurityGroup
+#      DBSubnetGroupName: !Ref DBSubnetGroup
+#      MultiAZ: false
+#      BackupRetentionPeriod: 10
+#    DependsOn:
+#      - DBSubnetGroup
+#      - ECSSecurityGroup
+
+#  DBSubnetGroup:
+#    Type: AWS::RDS::DBSubnetGroup
+#    Properties:
+#      DBSubnetGroupName: !Sub "${StackName}-DBSubnetGroup"
+#      DBSubnetGroupDescription: Subnet group for RDS
+#      SubnetIds:
+#        - !Ref PrivateSubnet1
+#        - !Ref PrivateSubnet2
+#    DependsOn:
+#      - PrivateSubnet1
+#      - PrivateSubnet2
+
+  DocumentDBCluster:
+    Type: AWS::DocDB::DBCluster
+    Properties:
+      DBClusterIdentifier: !Sub "${StackName}-DocDBCluster"
+      MasterUsername: !Ref MasterUsername
+      MasterUserPassword: !Ref MasterUserPassword
+      VpcSecurityGroupIds:
+        - !Ref DocDBSecurityGroup
+      DBSubnetGroupName: !Ref DocDBSubnetGroup
+    DependsOn:
+      - DocDBSubnetGroup
+      - DocDBSecurityGroup
+  
+  DocumentDBInstance1:
+    Type: AWS::DocDB::DBInstance
+    Properties:
+      DBInstanceClass: db.t3.medium
+      DBClusterIdentifier: !Ref DocumentDBCluster
+    DependsOn:
+      - DocumentDBCluster
+
+  DocumentDBInstance2:
+    Type: AWS::DocDB::DBInstance
+    Properties:
+      DBInstanceClass: db.t3.medium
+      DBClusterIdentifier: !Ref DocumentDBCluster
+    DependsOn:
+      - DocumentDBCluster
+
+  DocumentDBInstance3:
+    Type: AWS::DocDB::DBInstance
+    Properties:
+      DBInstanceClass: db.t3.medium
+      DBClusterIdentifier: !Ref DocumentDBCluster
+    DependsOn:
+      - DocumentDBCluster
+
+  DocDBSubnetGroup:
+    Type: AWS::DocDB::DBSubnetGroup
+    Properties:
+      DBSubnetGroupName: !Sub "${StackName}-DocDBSubnetGroup"
+      DBSubnetGroupDescription: Subnet group for DocumentDB
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+    DependsOn:
+      - PrivateSubnet1
+      - PrivateSubnet2
+
+  RabbitMQBroker:
+    Type: AWS::AmazonMQ::Broker
+    Properties:
+      BrokerName: !Sub "${StackName}-RabbitMQBroker"
+      DeploymentMode: SINGLE_INSTANCE
+      EngineType: RabbitMQ
+      EngineVersion: 3.13
+      HostInstanceType: mq.t3.micro
+      AutoMinorVersionUpgrade: true
+      PubliclyAccessible: false
+      SubnetIds:
+        - !Ref PrivateSubnet1
+      SecurityGroups:
+        - !Ref RMQSecurityGroup
+      Users:
+        - Username: !Ref MQAdminUsername
+          Password: !Ref MQAdminPassword
+    DependsOn:
+      - PrivateSubnet1
+      - RMQSecurityGroup
+
+  AdminEC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t3.medium
+      KeyName: !Ref KeyName
+      ImageId: ami-04a81a99f5ec58529  # Update with the latest Amazon Linux 2 AMI
+      SubnetId: !Ref PrivateSubnet1
+      SecurityGroupIds:
+        - !Ref AdminSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub "${StackName}-AdminPanel"
+    DependsOn:
+      - PrivateSubnet1
+      - AdminSecurityGroup
+
+  RedisEC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t3.medium
+      KeyName: !Ref KeyName
+      ImageId: ami-04a81a99f5ec58529  # Update with the latest Amazon Linux 2 AMI
+      SubnetId: !Ref PrivateSubnet1
+      SecurityGroupIds:
+        - !Ref RedisSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub "${StackName}-Redis"
+    DependsOn:
+      - PrivateSubnet1
+      - RedisSecurityGroup
+
+  AdminSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub "${StackName}-Admin-SecurityGroup"
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+    DependsOn:
+      - VPC
+
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${StackName}-secure-api-storage"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      LoggingConfiguration:
+        DestinationBucketName: !Ref LoggingBucket
+        LogFilePrefix: "s3-logs/"
+
+  LoggingBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${StackName}-logging-bucket"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+    DependsOn:
+      - VPC  # Assuming S3 Bucket creation is assumed to be at the end after VPC
+
+#  AmplifyApp:
+#    Type: AWS::Amplify::App
+#    Properties:
+#      Name: !Sub "${StackName}-AmplifyApp"
+#      Repository: !Ref RepositoryURL
+#      OauthToken: !Ref OauthToken
+#      BuildSpec:
+#      CustomRules:
+#        - Source: "</*>"  # Catch-all rule
+#          Target: "/index.html"
+#          Status: "200"
+#    DependsOn:
+#      - S3Bucket  # Assuming AmplifyApp depends on S3 Bucket
+
+  ClassicLoadBalancer:
+    Type: AWS::ElasticLoadBalancing::LoadBalancer
+    Properties:
+      LoadBalancerName: !Sub "${StackName}-ClassicLoadBalancer"
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      SecurityGroups:
+        - !Ref AdminSecurityGroup
+      Listeners:
+        - LoadBalancerPort: '80'
+          InstancePort: '80'
+          Protocol: HTTP
+#        - LoadBalancerPort: '443'
+#          InstancePort: '443'
+#          Protocol: HTTPS
+#          SSLCertificateId: !Ref ACMCertificateARN
+      HealthCheck:
+        Target: HTTP:80/
+        HealthyThreshold: '3'
+        UnhealthyThreshold: '5'
+        Interval: '30'
+        Timeout: '5'
+    DependsOn:
+      - PublicSubnet1
+      - PublicSubnet2
+      - AdminSecurityGroup
+
+  VPCGatewayEndpointS3:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      ServiceName: com.amazonaws.us-east-1.s3
+      RouteTableIds:
+        - !Ref PrivateSubnetRouteTable
+        - !Ref PublicSubnetRouteTable
+      VpcEndpointType: Gateway
+    DependsOn:
+      - VPC
+      - PrivateSubnetRouteTable
+      - PublicSubnetRouteTable
+
+  PrivateSubnetRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${StackName}-PrivateSubnet-RouteTable"
+    DependsOn:
+      - VPC
+
+  PrivateSubnetRouteNAT:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateSubnetRouteTable
+      DestinationCidrBlock: "0.0.0.0/0"
+      NatGatewayId: !Ref NatGateway
+
+  PrivateSubnet1RouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateSubnetRouteTable
+
+  PrivateSubnet2RouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateSubnetRouteTable
+
+
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt ElasticIP.AllocationId
+      SubnetId: !Ref PublicSubnet1
+    DependsOn:
+      - PublicSubnet1
+        
+  
+  PublicSubnetRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${StackName}-PublicSubnet-RouteTable"
+    DependsOn:
+      - VPC
+
+  PublicSubnetRouteInternetGateway:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicSubnetRouteTable
+      DestinationCidrBlock: "0.0.0.0/0"
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicSubnetRouteTable
+
+  PublicSubnet2RouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicSubnetRouteTable
+
+  VPCInterfaceEndpoints:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      ServiceName: com.amazonaws.us-east-1.rds
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroupIds:
+        - !Ref ECSSecurityGroup
+      VpcEndpointType: Interface
+    DependsOn:
+      - PrivateSubnet1
+      - PrivateSubnet2
+      - ECSSecurityGroup
+
+  VPCConnectEndpointEC2:
+    Type: AWS::EC2::InstanceConnectEndpoint
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      SecurityGroupIds:
+        - !Ref AdminSecurityGroup
+    DependsOn:
+      - PrivateSubnet1
+      - AdminSecurityGroup
+
+  VPCInterfaceEndpointECS:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      ServiceName: com.amazonaws.us-east-1.ecs
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroupIds:
+        - !Ref ECSSecurityGroup
+      VpcEndpointType: Interface
+    DependsOn:
+      - PrivateSubnet1
+      - PrivateSubnet2
+      - ECSSecurityGroup
+
+  VPCInterfaceEndpointECSAgent:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      ServiceName: com.amazonaws.us-east-1.ecs-agent
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroupIds:
+        - !Ref ECSSecurityGroup
+      VpcEndpointType: Interface
+    DependsOn:
+      - PrivateSubnet1
+      - PrivateSubnet2
+      - ECSSecurityGroup
+
+  VPCInterfaceEndpointECSTelemetry:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      ServiceName: com.amazonaws.us-east-1.ecs-telemetry
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroupIds:
+        - !Ref ECSSecurityGroup
+      VpcEndpointType: Interface
+    DependsOn:
+      - PrivateSubnet1
+      - PrivateSubnet2
+      - ECSSecurityGroup
+
+  VPCInterfaceEndpointRDS:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      ServiceName: com.amazonaws.us-east-1.rds
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroupIds:
+        - !Ref ECSSecurityGroup
+      VpcEndpointType: Interface
+    DependsOn:
+      - PrivateSubnet1
+      - PrivateSubnet2
+      - ECSSecurityGroup
+        
+  VPCInterfaceEndpointECRAPI:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      ServiceName: com.amazonaws.us-east-1.ecr.api
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroupIds:
+        - !Ref ECSSecurityGroup
+      VpcEndpointType: Interface
+    DependsOn:
+      - PrivateSubnet1
+      - PrivateSubnet2
+      - ECSSecurityGroup
+
+  VPCInterfaceEndpointECRDKR:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      ServiceName: com.amazonaws.us-east-1.ecr.dkr
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroupIds:
+        - !Ref ECSSecurityGroup
+      VpcEndpointType: Interface
+    DependsOn:
+      - PrivateSubnet1
+      - PrivateSubnet2
+      - ECSSecurityGroup
+
+  VPCInterfaceEndpointCloudWatchLogs:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      ServiceName: com.amazonaws.us-east-1.logs
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      SecurityGroupIds:
+        - !Ref ECSSecurityGroup
+      VpcEndpointType: Interface
+    DependsOn:
+      - PrivateSubnet1
+      - PrivateSubnet2
+      - ECSSecurityGroup
+
+Outputs:
+  ALBDNS:
+    Description: DNS Name of the Application Load Balancer (ALB) for ECS
+    Value: !GetAtt LoadBalancerALB.DNSName
+
+  CLBDNS:
+    Description: DNS Name of the Classic Load Balancer (CLB) for Admin Panel EC2
+    Value: !GetAtt ClassicLoadBalancer.DNSName
+
+#  PostgresDBEndpoint:
+#    Description: Endpoint of the PostgreSQL Database
+#    Value: !GetAtt PostgresDB.Endpoint.Address
+
+  DocumentDBClusterEndpoint:
+    Description: Endpoint of the DocumentDB Cluster
+    Value: !GetAtt DocumentDBCluster.Endpoint
+
+  RabbitMQBrokerEndpoint:
+    Description: Endpoint of the RabbitMQ Broker
+    Value: !Join [ ":", !GetAtt RabbitMQBroker.AmqpEndpoints ]
+
+  S3BucketName:
+    Description: Name of the S3 bucket for secure storage
+    Value: !Ref S3Bucket
+
+  ECRRepositoryURI:
+    Description: URI of the ECR repository
+    Value: !GetAtt ECRRepository.RepositoryUri
