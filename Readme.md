@@ -361,3 +361,11 @@ After the infrastructure is successfully deployed, follow these steps to deploy 
 By following the steps above, you will have a fully functional microservices architecture on AWS, ready to handle production traffic with high availability and scalability.
 
 ---
+
+## Recommended Reading
+
+- [AWS IT Adopts Microservices Architecture for Improved Air Travel Search Engine](https://aws.amazon.com/blogs/architecture/its-adopts-microservices-architecture-for-improved-air-travel-search-engine/)
+
+- [Modern Architecture with Fargate](https://imranarshad.com/modern-architecture-with-fargate/)
+---
+---
